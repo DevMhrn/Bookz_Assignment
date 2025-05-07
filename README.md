@@ -564,5 +564,4 @@ In the JSP form, use `form:select` with `itemValue` and `itemLabel` to correctly
 
 These solutions ensured that the application could handle entity relationships correctly in forms and avoid common pitfalls in JPA entity management.
 
-[Github URL](https://github.com/ArchismanMidya/Book_Crud)  https://github.com/ArchismanMidya/Book_Crud
 # Bookz_Assignment
