@@ -1,5 +1,4 @@
-
-# Spring Boot CRUD Application - Books and Authors
+# Literary Works Management System
 
 ## Entity Relationship Design
 
@@ -7,29 +6,29 @@
 
 The application is built around two main entities with a one-to-many relationship:
 
-1. **Author Entity**:
-   - `id`: Long (Primary Key)
-   - `name`: String
-   - `bio`: String
-   - One-to-Many relationship with Books
+1.  **Author Entity (Literary Creator)**:
+    *   `creatorId`: Long (Primary Key)
+    *   `name`: String
+    *   `bio`: String
+    *   One-to-Many relationship with Books (Literary Works)
 
-2. **Book Entity**:
-   - `id`: Long (Primary Key)
-   - `title`: String
-   - `isbn`: String
-   - Many-to-One relationship with Author
+2.  **Book Entity (Literary Work)**:
+    *   `id`: Long (Primary Key)
+    *   `title`: String
+    *   `isbn`: String
+    *   Many-to-One relationship with Author (Literary Creator)
 
 ### Entity Relationship Diagram
 
 ```
-┌─────────────┐       ┌─────────────┐
-│   Author    │       │    Book     │
-├─────────────┤       ├─────────────┤
-│ id          │       │ id          │
-│ name        │       │ title       │
-│ bio         │       │ isbn        │
-│             │       │ author_id   │
-└─────────────┘       └─────────────┘
+┌─────────────────────┐       ┌─────────────────────┐
+│   Literary Creator  │       │    Literary Work    │
+├─────────────────────┤       ├─────────────────────┤
+│ creatorId          │       │ id                  │
+│ name                │       │ title               │
+│ bio                 │       │ isbn                │
+│                     │       │ creator_id         │
+└─────────────────────┘       └─────────────────────┘
       │ 1                 ▲ *
       └─────────────────────┘
 ```
@@ -41,33 +40,35 @@ The entities were implemented using JPA annotations:
 **Author.java**
 ```java
 @Entity
+@Table(name = "literary_creator")
 @Getter
 @Setter
-@ToString(exclude = "books")
+@ToString(exclude = "literaryWorks")
 @NoArgsConstructor
 @AllArgsConstructor
 public class Author {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private Long creatorId;
     
+    @Column(name = "full_name", nullable = false)
     private String name;
     
-    @Column(length = 1000)
+    @Column(name = "biography", length = 2000)
     private String bio;
     
-    @OneToMany(mappedBy = "author", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<Book> books = new ArrayList<>();
+    @OneToMany(mappedBy = "creator", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<Book> literaryWorks = new HashSet<>();
     
     // Convenience methods for relationship management
-    public void addBook(Book book) {
-        books.add(book);
-        book.setAuthor(this);
+    public void linkLiteraryWork(Book literaryWork) {
+        literaryWorks.add(literaryWork);
+        literaryWork.setCreator(this);
     }
     
-    public void removeBook(Book book) {
-        books.remove(book);
-        book.setAuthor(null);
+    public void unlinkLiteraryWork(Book literaryWork) {
+        literaryWorks.remove(literaryWork);
+        literaryWork.setCreator(null);
     }
 }
 ```
@@ -75,29 +76,33 @@ public class Author {
 **Book.java**
 ```java
 @Entity
+@Table(name = "literary_work")
 @Getter
 @Setter
-@ToString(exclude = "author")
+@ToString(exclude = "creator")
 @NoArgsConstructor
 @AllArgsConstructor
 public class Book {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "work_id")
     private Long id;
     
+    @Column(name = "work_title", nullable = false)
     private String title;
     
+    @Column(name = "international_code", unique = true)
     private String isbn;
     
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "author_id")
-    private Author author;
+    @JoinColumn(name = "creator_id")
+    private Author creator;
     
     // Constructor without id for easier creation
-    public Book(String title, String isbn, Author author) {
+    public Book(String title, String isbn, Author creator) {
         this.title = title;
         this.isbn = isbn;
-        this.author = author;
+        this.creator = creator;
     }
 }
 ```
@@ -112,13 +117,13 @@ The application uses a `CommandLineRunner` implementation to populate the databa
 ```java
 @Component
 public class DataInitializer implements CommandLineRunner {
-    private final AuthorService authorService;
-    private final BookService bookService;
+    private final AuthorService creatorService;
+    private final BookService literaryService;
     
     @Autowired
-    public DataInitializer(AuthorService authorService, BookService bookService) {
-        this.authorService = authorService;
-        this.bookService = bookService;
+    public DataInitializer(AuthorService creatorService, BookService literaryService) {
+        this.creatorService = creatorService;
+        this.literaryService = literaryService;
     }
     
     @Override
@@ -127,13 +132,13 @@ public class DataInitializer implements CommandLineRunner {
         Author author1 = new Author();
         author1.setName("J.K. Rowling");
         author1.setBio("British author best known for the Harry Potter series.");
-        authorService.createAuthor(author1);
+        creatorService.registerCreator(author1);
         
         Book book1 = new Book();
         book1.setTitle("Harry Potter and the Philosopher's Stone");
         book1.setIsbn("9780747532743");
-        book1.setAuthor(author1);
-        bookService.createBook(book1);
+        book1.setCreator(author1);
+        literaryService.registerLiteraryWork(book1);
         
         // Additional authors and books...
     }
@@ -142,32 +147,33 @@ public class DataInitializer implements CommandLineRunner {
 
 ### 2. Create Operations
 
-#### Adding a New Author
+#### Adding a New Author (Literary Creator)
 
 **Controller Code (AuthorController.java)**
 ```java
-@GetMapping("/add")
-public String showAddForm(Model model) {
-    model.addAttribute("author", new Author());
-    return "addAuthor";
+@GetMapping("/register")
+public String showCreatorRegistrationForm(Model model) {
+    model.addAttribute("literaryCreator", new Author());
+    return "registerCreator";
 }
 
-@PostMapping("/add")
-public String addAuthor(@ModelAttribute Author author, RedirectAttributes redirectAttributes) {
+@PostMapping("/register")
+public String processCreatorRegistration(@ModelAttribute("literaryCreator") Author creator,
+                                       RedirectAttributes notification) {
     try {
-        authorService.createAuthor(author);
-        redirectAttributes.addFlashAttribute("message", "Author added successfully!");
-        return "redirect:/authors";
+        creatorService.registerCreator(creator);
+        notification.addFlashAttribute("notification", "Literary creator registered successfully");
+        return "redirect:/creators";
     } catch (Exception e) {
-        redirectAttributes.addFlashAttribute("error", "Error adding author: " + e.getMessage());
-        return "redirect:/authors/add";
+        notification.addFlashAttribute("errorMessage", "Registration failed: " + e.getMessage());
+        return "redirect:/creators/register";
     }
 }
 ```
 
-**JSP Form (addAuthor.jsp)**
+**JSP Form (registerCreator.jsp)**
 ```html
-<form:form action="/authors/add" method="post" modelAttribute="author">
+<form:form action="/creators/register" method="post" modelAttribute="literaryCreator">
     <div class="form-group">
         <form:label path="name">Name</form:label>
         <form:input path="name" required="true" />
@@ -177,37 +183,38 @@ public String addAuthor(@ModelAttribute Author author, RedirectAttributes redire
         <form:textarea path="bio" rows="5" />
     </div>
     <button type="submit" class="btn">Save Author</button>
-    <a href="<c:url value='/authors' />" class="btn">Cancel</a>
+    <a href="<c:url value='/creators' />" class="btn">Cancel</a>
 </form:form>
 ```
 
-#### Adding a New Book
+#### Adding a New Book (Literary Work)
 
 **Controller Code (BookController.java)**
 ```java
-@GetMapping("/add")
-public String showAddForm(Model model) {
-    model.addAttribute("book", new Book());
-    model.addAttribute("authors", authorService.getAllAuthors());
-    return "addBook";
+@GetMapping("/register")
+public String showRegistrationForm(Model model) {
+    model.addAttribute("literaryWork", new Book());
+    model.addAttribute("creators", creatorService.findAllCreators());
+    return "registerWork";
 }
 
-@PostMapping("/add")
-public String addBook(@ModelAttribute Book book, RedirectAttributes redirectAttributes) {
+@PostMapping("/register")
+public String processWorkRegistration(@ModelAttribute("literaryWork") Book work, 
+                                     RedirectAttributes notification) {
     try {
-        bookService.createBook(book);
-        redirectAttributes.addFlashAttribute("message", "Book added successfully!");
-        return "redirect:/books";
+        literaryService.registerLiteraryWork(work);
+        notification.addFlashAttribute("notification", "Literary work successfully registered");
+        return "redirect:/catalog";
     } catch (Exception e) {
-        redirectAttributes.addFlashAttribute("error", "Error adding book: " + e.getMessage());
-        return "redirect:/books/add";
+        notification.addFlashAttribute("errorMessage", "Registration failed: " + e.getMessage());
+        return "redirect:/catalog/register";
     }
 }
 ```
 
-**JSP Form (addBook.jsp)**
+**JSP Form (registerWork.jsp)**
 ```html
-<form:form action="/books/add" method="post" modelAttribute="book">
+<form:form action="/catalog/register" method="post" modelAttribute="literaryWork">
     <div class="form-group">
         <form:label path="title">Title</form:label>
         <form:input path="title" required="true" />
@@ -217,31 +224,31 @@ public String addBook(@ModelAttribute Book book, RedirectAttributes redirectAttr
         <form:input path="isbn" required="true" />
     </div>
     <div class="form-group">
-        <form:label path="author">Author</form:label>
-        <form:select path="author" required="true">
+        <form:label path="creator">Author</form:label>
+        <form:select path="creator" required="true">
             <form:option value="" label="-- Select Author --" />
-            <form:options items="${authors}" itemValue="id" itemLabel="name" />
+            <form:options items="${creators}" itemValue="creatorId" itemLabel="name" />
         </form:select>
     </div>
     <button type="submit" class="btn">Save Book</button>
-    <a href="<c:url value='/books' />" class="btn">Cancel</a>
+    <a href="<c:url value='/catalog' />" class="btn">Cancel</a>
 </form:form>
 ```
 
 ### 3. Read Operations
 
-#### Listing All Authors
+#### Listing All Authors (Literary Creators)
 
 **Controller Code (AuthorController.java)**
 ```java
 @GetMapping
-public String listAuthors(Model model) {
-    model.addAttribute("authors", authorService.getAllAuthors());
-    return "listAuthors";
+public String displayCreatorDirectory(Model model) {
+    model.addAttribute("creatorDirectory", creatorService.findAllCreators());
+    return "creatorDirectory";
 }
 ```
 
-**JSP View (listAuthors.jsp)**
+**JSP View (creatorDirectory.jsp)**
 ```html
 <table>
     <thead>
@@ -253,13 +260,13 @@ public String listAuthors(Model model) {
         </tr>
     </thead>
     <tbody>
-        <c:forEach var="author" items="${authors}">
+        <c:forEach var="creator" items="${creatorDirectory}">
             <tr>
-                <td>${author.id}</td>
-                <td>${author.name}</td>
-                <td>${author.bio}</td>
+                <td>${creator.creatorId}</td>
+                <td>${creator.name}</td>
+                <td>${creator.bio}</td>
                 <td>
-                    <a href="<c:url value='/authors/update/${author.id}' />" class="btn">Edit</a>
+                    <a href="<c:url value='/creators/edit/${creator.creatorId}' />" class="btn">Edit</a>
                 </td>
             </tr>
         </c:forEach>
@@ -267,18 +274,18 @@ public String listAuthors(Model model) {
 </table>
 ```
 
-#### Listing All Books
+#### Listing All Books (Literary Works)
 
 **Controller Code (BookController.java)**
 ```java
 @GetMapping
-public String listBooks(Model model) {
-    model.addAttribute("books", bookService.getAllBooks());
-    return "listBooks";
+public String displayCatalog(Model model) {
+    model.addAttribute("literaryWorks", literaryService.browseCatalog());
+    return "catalogView";
 }
 ```
 
-**JSP View (listBooks.jsp)**
+**JSP View (catalogView.jsp)**
 ```html
 <table>
     <thead>
@@ -291,14 +298,14 @@ public String listBooks(Model model) {
         </tr>
     </thead>
     <tbody>
-        <c:forEach var="book" items="${books}">
+        <c:forEach var="publication" items="${literaryWorks}">
             <tr>
-                <td>${book.id}</td>
-                <td>${book.title}</td>
-                <td>${book.isbn}</td>
-                <td>${book.author.name}</td>
+                <td>${publication.id}</td>
+                <td>${publication.title}</td>
+                <td>${publication.isbn}</td>
+                <td>${publication.creator.name}</td>
                 <td>
-                    <a href="<c:url value='/books/update/${book.id}' />" class="btn">Edit</a>
+                    <a href="<c:url value='/catalog/edit/${publication.id}' />" class="btn">Edit</a>
                 </td>
             </tr>
         </c:forEach>
@@ -306,25 +313,25 @@ public String listBooks(Model model) {
 </table>
 ```
 
-#### Custom Query for Books with Authors
+#### Custom Query for Books with Authors (Detailed Catalog View)
 
 **Repository Code (BookRepository.java)**
 ```java
-@Query("SELECT b.title, b.isbn, a.name FROM Book b JOIN b.author a")
-List<Object[]> fetchBookWithAuthor();
+@Query("SELECT w.title, w.isbn, c.name FROM Book w JOIN w.creator c")
+List<Object[]> retrieveWorksWithCreators();
 ```
 
 **Controller Code (BookController.java)**
 ```java
-@GetMapping("/with-authors")
-public String listBooksWithAuthors(Model model) {
-    List<Object[]> booksWithAuthors = bookService.getBooksWithAuthor();
-    model.addAttribute("booksWithAuthors", booksWithAuthors);
-    return "listBooksWithAuthors";
+@GetMapping("/detailed-view")
+public String detailedCatalogView(Model model) {
+    List<Object[]> catalogWithCreators = literaryService.getCatalogWithCreators();
+    model.addAttribute("catalogItems", catalogWithCreators);
+    return "detailedCatalogView";
 }
 ```
 
-**JSP View (listBooksWithAuthors.jsp)**
+**JSP View (detailedCatalogView.jsp)**
 ```html
 <table>
     <thead>
@@ -335,11 +342,11 @@ public String listBooksWithAuthors(Model model) {
         </tr>
     </thead>
     <tbody>
-        <c:forEach var="bookWithAuthor" items="${booksWithAuthors}">
+        <c:forEach var="catalogEntry" items="${catalogItems}">
             <tr>
-                <td>${bookWithAuthor[0]}</td> <!-- Title -->
-                <td>${bookWithAuthor[1]}</td> <!-- ISBN -->
-                <td>${bookWithAuthor[2]}</td> <!-- Author Name -->
+                <td>${catalogEntry[0]}</td> <!-- Title -->
+                <td>${catalogEntry[1]}</td> <!-- ISBN -->
+                <td>${catalogEntry[2]}</td> <!-- Author Name -->
             </tr>
         </c:forEach>
     </tbody>
@@ -348,39 +355,41 @@ public String listBooksWithAuthors(Model model) {
 
 ### 4. Update Operations
 
-#### Updating an Author
+#### Updating an Author (Literary Creator)
 
 **Controller Code (AuthorController.java)**
 ```java
-@GetMapping("/update/{id}")
-public String showUpdateForm(@PathVariable Long id, Model model, RedirectAttributes redirectAttributes) {
-    Optional<Author> author = authorService.getAuthorById(id);
-    if (author.isPresent()) {
-        model.addAttribute("author", author.get());
-        return "updateAuthor";
+@GetMapping("/edit/{creatorId}")
+public String showCreatorEditForm(@PathVariable Long creatorId, Model model,
+                                 RedirectAttributes notification) {
+    Optional<Author> creatorToEdit = creatorService.findCreatorById(creatorId);
+    if (creatorToEdit.isPresent()) {
+        model.addAttribute("literaryCreator", creatorToEdit.get());
+        return "editCreatorProfile";
     } else {
-        redirectAttributes.addFlashAttribute("error", "Author not found!");
-        return "redirect:/authors";
+        notification.addFlashAttribute("errorMessage", "Creator not found in directory");
+        return "redirect:/creators";
     }
 }
 
-@PostMapping("/update")
-public String updateAuthor(@ModelAttribute Author author, RedirectAttributes redirectAttributes) {
+@PostMapping("/edit")
+public String processProfileUpdate(@ModelAttribute("literaryCreator") Author updatedCreator,
+                                  RedirectAttributes notification) {
     try {
-        authorService.updateAuthor(author);
-        redirectAttributes.addFlashAttribute("message", "Author updated successfully!");
-        return "redirect:/authors";
+        creatorService.modifyCreatorDetails(updatedCreator);
+        notification.addFlashAttribute("notification", "Creator profile updated");
+        return "redirect:/creators";
     } catch (Exception e) {
-        redirectAttributes.addFlashAttribute("error", "Error updating author: " + e.getMessage());
-        return "redirect:/authors/update/" + author.getId();
+        notification.addFlashAttribute("errorMessage", "Update failed: " + e.getMessage());
+        return "redirect:/creators/edit/" + updatedCreator.getCreatorId();
     }
 }
 ```
 
-**JSP Form (updateAuthor.jsp)**
+**JSP Form (editCreatorProfile.jsp)**
 ```html
-<form:form action="/authors/update" method="post" modelAttribute="author">
-    <form:hidden path="id" />
+<form:form action="/creators/edit" method="post" modelAttribute="literaryCreator">
+    <form:hidden path="creatorId" />
     <div class="form-group">
         <form:label path="name">Name</form:label>
         <form:input path="name" required="true" />
@@ -390,43 +399,45 @@ public String updateAuthor(@ModelAttribute Author author, RedirectAttributes red
         <form:textarea path="bio" rows="5" />
     </div>
     <button type="submit" class="btn">Update Author</button>
-    <a href="<c:url value='/authors' />" class="btn">Cancel</a>
+    <a href="<c:url value='/creators' />" class="btn">Cancel</a>
 </form:form>
 ```
 
-#### Updating a Book
+#### Updating a Book (Literary Work)
 
 **Controller Code (BookController.java)**
 ```java
-@GetMapping("/update/{id}")
-public String showUpdateForm(@PathVariable Long id, Model model, RedirectAttributes redirectAttributes) {
-    Optional<Book> book = bookService.getBookById(id);
-    if (book.isPresent()) {
-        model.addAttribute("book", book.get());
-        model.addAttribute("authors", authorService.getAllAuthors());
-        return "updateBook";
+@GetMapping("/edit/{workId}")
+public String showEditForm(@PathVariable Long workId, Model model, 
+                          RedirectAttributes notification) {
+    Optional<Book> workToEdit = literaryService.locateLiteraryWork(workId);
+    if (workToEdit.isPresent()) {
+        model.addAttribute("literaryWork", workToEdit.get());
+        model.addAttribute("creators", creatorService.findAllCreators());
+        return "editWorkForm";
     } else {
-        redirectAttributes.addFlashAttribute("error", "Book not found!");
-        return "redirect:/books";
+        notification.addFlashAttribute("errorMessage", "Literary work not found in catalog");
+        return "redirect:/catalog";
     }
 }
 
-@PostMapping("/update")
-public String updateBook(@ModelAttribute Book book, RedirectAttributes redirectAttributes) {
+@PostMapping("/edit")
+public String processWorkUpdate(@ModelAttribute("literaryWork") Book updatedWork, 
+                               RedirectAttributes notification) {
     try {
-        bookService.updateBook(book);
-        redirectAttributes.addFlashAttribute("message", "Book updated successfully!");
-        return "redirect:/books";
+        literaryService.reviseWorkDetails(updatedWork);
+        notification.addFlashAttribute("notification", "Literary work details updated");
+        return "redirect:/catalog";
     } catch (Exception e) {
-        redirectAttributes.addFlashAttribute("error", "Error updating book: " + e.getMessage());
-        return "redirect:/books/update/" + book.getId();
+        notification.addFlashAttribute("errorMessage", "Update failed: " + e.getMessage());
+        return "redirect:/catalog/edit/" + updatedWork.getId();
     }
 }
 ```
 
-**JSP Form (updateBook.jsp)**
+**JSP Form (editWorkForm.jsp)**
 ```html
-<form:form action="/books/update" method="post" modelAttribute="book">
+<form:form action="/catalog/edit" method="post" modelAttribute="literaryWork">
     <form:hidden path="id" />
     <div class="form-group">
         <form:label path="title">Title</form:label>
@@ -437,14 +448,14 @@ public String updateBook(@ModelAttribute Book book, RedirectAttributes redirectA
         <form:input path="isbn" required="true" />
     </div>
     <div class="form-group">
-        <form:label path="author">Author</form:label>
-        <form:select path="author" required="true">
+        <form:label path="creator">Author</form:label>
+        <form:select path="creator" required="true">
             <form:option value="" label="-- Select Author --" />
-            <form:options items="${authors}" itemValue="id" itemLabel="name" />
+            <form:options items="${creators}" itemValue="creatorId" itemLabel="name" />
         </form:select>
     </div>
     <button type="submit" class="btn">Update Book</button>
-    <a href="<c:url value='/books' />" class="btn">Cancel</a>
+    <a href="<c:url value='/catalog' />" class="btn">Cancel</a>
 </form:form>
 ```
 
@@ -474,7 +485,7 @@ Replace the `@Data` annotation with more specific Lombok annotations and exclude
 // In Book.java
 @Getter
 @Setter
-@ToString(exclude = "author")
+@ToString(exclude = "creator") // Updated from "author"
 @NoArgsConstructor
 @AllArgsConstructor
 public class Book {
@@ -484,7 +495,7 @@ public class Book {
 // In Author.java
 @Getter
 @Setter
-@ToString(exclude = "books")
+@ToString(exclude = "literaryWorks") // Updated from "books"
 @NoArgsConstructor
 @AllArgsConstructor
 public class Author {
@@ -525,9 +536,15 @@ Ensure that all access to lazy-loaded relationships occurs within a transaction 
 2. Fetching the required data eagerly when needed
 
 ```java
+// Example from BookService.java
 @Transactional
-public Book updateBook(Book book) {
-    return bookRepository.save(book);
+public Book reviseWorkDetails(Book revisedWork) { // Updated method signature
+    // Ensure work exists before updating
+    if (revisedWork.getId() == null || 
+        !literaryWorkRepository.existsById(revisedWork.getId())) { // Assuming literaryWorkRepository
+        throw new IllegalArgumentException("Cannot update non-existent literary work");
+    }
+    return literaryWorkRepository.save(revisedWork); // Assuming literaryWorkRepository
 }
 ```
 
@@ -540,15 +557,17 @@ When submitting forms with entity relationships (e.g., selecting an author for a
 Use `@ModelAttribute` in the controller methods and ensure that the form fields correctly map to the entity properties:
 
 ```java
-@PostMapping("/update")
-public String updateBook(@ModelAttribute Book book, RedirectAttributes redirectAttributes) {
+// Example from BookController.java
+@PostMapping("/edit") // Updated path
+public String processWorkUpdate(@ModelAttribute("literaryWork") Book updatedWork, // Updated parameter
+                               RedirectAttributes notification) {
     try {
-        bookService.updateBook(book);
-        redirectAttributes.addFlashAttribute("message", "Book updated successfully!");
-        return "redirect:/books";
+        literaryService.reviseWorkDetails(updatedWork); // Updated service call
+        notification.addFlashAttribute("notification", "Literary work details updated"); // Updated flash attribute
+        return "redirect:/catalog"; // Updated redirect path
     } catch (Exception e) {
-        redirectAttributes.addFlashAttribute("error", "Error updating book: " + e.getMessage());
-        return "redirect:/books/update/" + book.getId();
+        notification.addFlashAttribute("errorMessage", "Update failed: " + e.getMessage()); // Updated flash attribute
+        return "redirect:/catalog/edit/" + updatedWork.getId(); // Updated redirect path
     }
 }
 ```
@@ -556,12 +575,10 @@ public String updateBook(@ModelAttribute Book book, RedirectAttributes redirectA
 In the JSP form, use `form:select` with `itemValue` and `itemLabel` to correctly map the selected author:
 
 ```html
-<form:select path="author" required="true">
+<form:select path="creator" required="true"> <!-- path updated to "creator" -->
     <form:option value="" label="-- Select Author --" />
-    <form:options items="${authors}" itemValue="id" itemLabel="name" />
+    <form:options items="${creators}" itemValue="creatorId" itemLabel="name" /> <!-- items updated, itemValue updated -->
 </form:select>
 ```
 
 These solutions ensured that the application could handle entity relationships correctly in forms and avoid common pitfalls in JPA entity management.
-
-# Bookz_Assignment
